@@ -1,0 +1,87 @@
+# =============================================================================
+# matrix-soulseek-bridge — main configuration
+# -----------------------------------------------------------------------------
+# Copy this file to `config.yaml` and fill in the values for your setup.
+# The bridge connects a single Soulseek chat room to a single Matrix room.
+# Soulseek users appear in Matrix as "ghost" users (via the appservice), and
+# Matrix users are echoed into the Soulseek room as messages prefixed with
+# "[M] <name>: ...".
+# =============================================================================
+
+homeserver:
+  # Base URL of your Matrix homeserver's client-server API.
+  # This is where the bridge sends its API requests (login, sending events...).
+  # Example: https://matrix.example.com
+  address: https://matrix.example.com
+
+  # The server name / domain part of your Matrix user IDs (the bit after the
+  # colon in @user:example.com). This is NOT necessarily the same as the
+  # address above — it is the value of `server_name` in your homeserver config.
+  domain: example.com
+
+# -----------------------------------------------------------------------------
+# Appservice (application service) settings.
+# These MUST match the values in registration.yaml — the homeserver uses the
+# registration file to authenticate the bridge, and the bridge uses the tokens
+# below to authenticate back to the homeserver.
+# -----------------------------------------------------------------------------
+appservice:
+  # Unique ID of this appservice. Must equal `id` in registration.yaml.
+  id: soulseek
+
+  # Address (host:port) the bridge will listen on for transactions pushed by
+  # the homeserver. The homeserver connects to the `url` from registration.yaml,
+  # which should resolve to this listener.
+  hostname: 0.0.0.0
+  port: 29333
+
+  # Tokens shared between the bridge and the homeserver. These MUST be identical
+  # to the matching fields in registration.yaml. Treat them as secrets.
+  #   as_token: the bridge presents this to the homeserver.
+  #   hs_token: the homeserver presents this to the bridge; the bridge verifies it.
+  as_token: "CHANGE_ME_generate_a_long_random_string"
+  hs_token: "CHANGE_ME_generate_another_long_random_string"
+
+  # Localpart of the bridge's own bot user (@<bot_username>:<domain>). This bot
+  # is the account that performs administrative actions and is the Matrix-side
+  # identity of the bridge itself. Must match `sender_localpart` in registration.yaml.
+  bot_username: soulseekbot
+
+  # Template used to build the Matrix user ID for each Soulseek "ghost" user.
+  # `{username}` is replaced with the (sanitized) Soulseek nickname.
+  # The resulting localparts MUST fall inside the user namespace regex declared
+  # in registration.yaml (default: @soulseek_*:domain).
+  username_template: "soulseek_{username}"
+
+# -----------------------------------------------------------------------------
+# Matrix room that is bridged. Soulseek room messages are mirrored here, and
+# messages sent here by real Matrix users are echoed into the Soulseek room.
+# -----------------------------------------------------------------------------
+matrix:
+  # Internal room ID (starts with '!', not a '#alias'). The bridge bot and the
+  # Soulseek ghosts must be members of this room. Example: !abcdef:example.com
+  room_id: "!yourroomid:example.com"
+
+# -----------------------------------------------------------------------------
+# Soulseek account and room used by the bridge.
+# -----------------------------------------------------------------------------
+soulseek:
+  # Soulseek server to connect to. The official server is below; change only if
+  # you run or use a different one. Format: host:port
+  server_address: "server.slsknet.org:2242"
+
+  # Credentials for the Soulseek account the bridge logs in as. This account is
+  # what other Soulseek users see, and it is the sender of all "[M] ..." echoes.
+  username: "your_soulseek_username"
+  password: "your_soulseek_password"
+
+  # Name of the Soulseek chat room to join and bridge. This is the human room
+  # name as shown in Soulseek clients (not an ID).
+  room: "TheRoomName"
+
+# -----------------------------------------------------------------------------
+# Logging.
+# -----------------------------------------------------------------------------
+logging:
+  # One of: debug, info, warn, error
+  level: info

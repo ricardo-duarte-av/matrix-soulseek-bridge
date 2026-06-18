@@ -1,0 +1,55 @@
+# =============================================================================
+# matrix-soulseek-bridge — appservice registration
+# -----------------------------------------------------------------------------
+# Copy this file to `registration.yaml`, fill it in, and register it with your
+# homeserver. For Synapse, add the file's path to `app_service_config_files` in
+# homeserver.yaml and restart Synapse:
+#
+#   app_service_config_files:
+#     - /path/to/registration.yaml
+#
+# The tokens and IDs here MUST match the `appservice` section of config.yaml.
+# =============================================================================
+
+# Unique identifier for this appservice. Must equal `appservice.id` in config.yaml.
+id: soulseek
+
+# URL the homeserver uses to reach the bridge (where it pushes events/transactions).
+# This must point at the bridge's listener (appservice.hostname/port in config.yaml).
+url: http://localhost:29333
+
+# Shared secret tokens. These MUST be identical to the matching fields in
+# config.yaml. Generate long random values (e.g. `openssl rand -hex 32`).
+#   as_token: token the bridge uses to authenticate to the homeserver.
+#   hs_token: token the homeserver uses to authenticate to the bridge.
+as_token: "CHANGE_ME_generate_a_long_random_string"
+hs_token: "CHANGE_ME_generate_another_long_random_string"
+
+# Localpart of the bridge's bot user (@<sender_localpart>:<domain>).
+# Must match `appservice.bot_username` in config.yaml.
+sender_localpart: soulseekbot
+
+# Whether this appservice is subject to the homeserver's rate limits.
+# Bridges should not be rate limited, so this is false.
+rate_limited: false
+
+# Namespaces this appservice claims ownership of.
+namespaces:
+  # User IDs the bridge controls (the Soulseek "ghost" users plus the bot).
+  # `exclusive: true` means only this appservice may create/control users that
+  # match the regex — no real user can register such a name.
+  # The regex MUST match every ghost localpart produced by
+  # `appservice.username_template` in config.yaml, and the bot user too.
+  # IMPORTANT: replace `example\.com` with your own homeserver domain.
+  users:
+    - exclusive: true
+      regex: "@soulseek_.*:example\\.com"
+    - exclusive: true
+      regex: "@soulseekbot:example\\.com"
+
+  # Room aliases the bridge claims. The bridge addresses rooms by ID, so none.
+  aliases: []
+
+  # Room IDs the bridge claims. Left empty — the bridged room is configured by
+  # ID in config.yaml rather than claimed here.
+  rooms: []
