@@ -211,26 +211,84 @@ func (b *Bridge) SendBotNotice(ctx context.Context, text string) error {
 	return nil
 }
 
-// ensureGhost registers the ghost, joins it to the room, and sets its display
-// name the first time it is seen.
+// ensureGhost registers the ghost, sets its display name, and joins it to the
+// room the first time it is seen. The display name is set *before* joining so
+// the join's m.room.member event carries it — otherwise clients fall back to
+// the localpart (e.g. "soulseek_username") instead of the bare Soulseek name.
 func (b *Bridge) ensureGhost(ctx context.Context, ghost id.UserID, displayName string) error {
 	b.initMu.Lock()
 	_, done := b.initialized[ghost]
 	b.initMu.Unlock()
 
 	intent := b.as.Intent(ghost)
-	if err := intent.EnsureJoined(ctx, b.opts.RoomID); err != nil {
-		return fmt.Errorf("matrix: ghost %s join: %w", ghost, err)
-	}
 	if !done {
+		if err := intent.EnsureRegistered(ctx); err != nil {
+			return fmt.Errorf("matrix: ghost %s register: %w", ghost, err)
+		}
 		if displayName != "" {
 			if err := intent.SetDisplayName(ctx, displayName); err != nil {
 				b.log.Warn("set ghost display name", "ghost", ghost, "err", err)
 			}
 		}
-		b.initMu.Lock()
-		b.initialized[ghost] = struct{}{}
-		b.initMu.Unlock()
+		b.markInitialized(ghost)
+	}
+	if err := intent.EnsureJoined(ctx, b.opts.RoomID); err != nil {
+		return fmt.Errorf("matrix: ghost %s join: %w", ghost, err)
+	}
+	return nil
+}
+
+// markInitialized records that a ghost has been registered/named so the message
+// path skips that work on subsequent messages.
+func (b *Bridge) markInitialized(ghost id.UserID) {
+	b.initMu.Lock()
+	b.initialized[ghost] = struct{}{}
+	b.initMu.Unlock()
+}
+
+// RebroadcastGhostNames repairs ghosts that joined the room before their display
+// name was set: their m.room.member event still shows the localpart (e.g.
+// "soulseek_username") rather than the bare Soulseek nickname. For each ghost
+// the appservice owns, it copies the ghost's global profile display name (which
+// the bridge keeps authoritative) into a fresh membership event when the two
+// differ. It is best-effort: per-ghost failures are logged and skipped.
+func (b *Bridge) RebroadcastGhostNames(ctx context.Context) error {
+	members, err := b.as.BotIntent().JoinedMembers(ctx, b.opts.RoomID)
+	if err != nil {
+		return fmt.Errorf("matrix: list room members: %w", err)
+	}
+	botID := b.as.BotIntent().UserID
+	repaired := 0
+	for userID, member := range members.Joined {
+		if userID == botID || !b.owns(userID) {
+			continue
+		}
+		intent := b.as.Intent(userID)
+		profile, err := intent.GetProfile(ctx, userID)
+		if err != nil {
+			b.log.Warn("rebroadcast: get ghost profile", "ghost", userID, "err", err)
+			continue
+		}
+		// Already known to the bridge for this run; the message path won't
+		// redo registration/naming for it.
+		b.markInitialized(userID)
+		if profile.DisplayName == "" || profile.DisplayName == member.DisplayName {
+			continue // nothing to set, or the room already shows the right name
+		}
+		_, err = intent.SendStateEvent(ctx, b.opts.RoomID, event.StateMember, userID.String(), &event.MemberEventContent{
+			Membership:  event.MembershipJoin,
+			Displayname: profile.DisplayName,
+			AvatarURL:   profile.AvatarURL.CUString(),
+		})
+		if err != nil {
+			b.log.Warn("rebroadcast: update ghost name", "ghost", userID, "err", err)
+			continue
+		}
+		b.log.Info("repaired ghost display name", "ghost", userID, "name", profile.DisplayName)
+		repaired++
+	}
+	if repaired > 0 {
+		b.log.Info("rebroadcast ghost display names", "repaired", repaired)
 	}
 	return nil
 }

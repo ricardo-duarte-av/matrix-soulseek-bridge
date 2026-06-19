@@ -74,6 +74,11 @@ func (b *Bridge) Run(ctx context.Context) error {
 	if err := b.mx.Start(ctx); err != nil {
 		return fmt.Errorf("start matrix: %w", err)
 	}
+	// Repair any ghosts that joined in a previous run before their display name
+	// was set, so they show the bare Soulseek nickname instead of the localpart.
+	if err := b.mx.RebroadcastGhostNames(ctx); err != nil {
+		b.log.Warn("rebroadcast ghost display names failed", "err", err)
+	}
 	b.runSoulseek(ctx)
 	return ctx.Err()
 }
