@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// defaultFlapSuppressionSeconds is the grace period used to absorb Soulseek
+// leave/rejoin flaps when soulseek.flap_suppression_seconds is unset.
+const defaultFlapSuppressionSeconds = 30
 
 // Config is the top-level bridge configuration, mirroring sample.config.yaml.
 type Config struct {
@@ -47,6 +52,12 @@ type Soulseek struct {
 	Username      string `yaml:"username"`
 	Password      string `yaml:"password"`
 	Room          string `yaml:"room"`
+
+	// FlapSuppressionSeconds delays "left" announcements so that a quick
+	// leave→rejoin (a client reconnecting after a network blip) is collapsed
+	// into nothing instead of two noisy notices. nil applies the default;
+	// 0 or negative disables suppression (announce leaves immediately).
+	FlapSuppressionSeconds *int `yaml:"flap_suppression_seconds"`
 }
 
 // Logging holds logging options.
@@ -59,6 +70,19 @@ type Logging struct {
 func (c *Config) FormatGhostUserID(soulseekName string) string {
 	localpart := strings.ReplaceAll(c.Appservice.UsernameTemplate, "{username}", sanitizeLocalpart(soulseekName))
 	return fmt.Sprintf("@%s:%s", localpart, c.Homeserver.Domain)
+}
+
+// FlapSuppression returns the grace period for collapsing Soulseek
+// leave/rejoin flaps. A return of 0 means suppression is disabled.
+func (c *Config) FlapSuppression() time.Duration {
+	s := defaultFlapSuppressionSeconds
+	if c.Soulseek.FlapSuppressionSeconds != nil {
+		s = *c.Soulseek.FlapSuppressionSeconds
+	}
+	if s <= 0 {
+		return 0
+	}
+	return time.Duration(s) * time.Second
 }
 
 // BotUserID returns the bridge bot's full Matrix user ID.
