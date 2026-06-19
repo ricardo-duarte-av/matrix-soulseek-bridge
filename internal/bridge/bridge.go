@@ -39,6 +39,15 @@ type Bridge struct {
 
 	slskMu sync.Mutex
 	slsk   *soulseek.Client
+
+	// flapGrace is how long a "left" announcement is held back to absorb a
+	// leave→rejoin flap. Zero disables suppression.
+	flapGrace time.Duration
+	// presenceMu guards pendingLeave.
+	presenceMu sync.Mutex
+	// pendingLeave maps a Soulseek username to the timer that will announce
+	// their departure once the grace period elapses without a rejoin.
+	pendingLeave map[string]*time.Timer
 }
 
 // New builds a Bridge from config and the loaded appservice registration.
@@ -46,7 +55,12 @@ func New(cfg *config.Config, reg *appservice.Registration, logger *slog.Logger) 
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
-	b := &Bridge{cfg: cfg, log: logger}
+	b := &Bridge{
+		cfg:          cfg,
+		log:          logger,
+		flapGrace:    cfg.FlapSuppression(),
+		pendingLeave: make(map[string]*time.Timer),
+	}
 
 	mx, err := matrix.New(matrix.Options{
 		HomeserverURL:    cfg.Homeserver.Address,
@@ -170,6 +184,20 @@ func (b *Bridge) onSoulseekJoined(username string) {
 	if username == b.cfg.Soulseek.Username {
 		return
 	}
+
+	// If a leave for this user is still within its grace window, the user is
+	// merely reconnecting after a network blip: cancel the pending "left"
+	// notice and stay silent — from Matrix's point of view they never left.
+	b.presenceMu.Lock()
+	t, pending := b.pendingLeave[username]
+	if pending {
+		delete(b.pendingLeave, username)
+	}
+	b.presenceMu.Unlock()
+	if pending && t.Stop() {
+		return
+	}
+
 	if err := b.mx.SendBotNotice(b.ctx, fmt.Sprintf("%s joined the Soulseek room", username)); err != nil {
 		b.log.Debug("join notice failed", "err", err)
 	}
@@ -179,6 +207,39 @@ func (b *Bridge) onSoulseekLeft(username string) {
 	if username == b.cfg.Soulseek.Username {
 		return
 	}
+
+	// With suppression disabled, announce immediately.
+	if b.flapGrace <= 0 {
+		b.announceLeft(username)
+		return
+	}
+
+	// Otherwise hold the announcement: if the user rejoins within the grace
+	// period, onSoulseekJoined cancels this timer and nothing is sent.
+	b.presenceMu.Lock()
+	if _, exists := b.pendingLeave[username]; exists {
+		b.presenceMu.Unlock()
+		return
+	}
+	var t *time.Timer
+	t = time.AfterFunc(b.flapGrace, func() {
+		b.presenceMu.Lock()
+		// Only fire if we're still the active timer for this user; a rejoin
+		// (or a newer leave) would have replaced or removed us.
+		if b.pendingLeave[username] != t {
+			b.presenceMu.Unlock()
+			return
+		}
+		delete(b.pendingLeave, username)
+		b.presenceMu.Unlock()
+		b.announceLeft(username)
+	})
+	b.pendingLeave[username] = t
+	b.presenceMu.Unlock()
+}
+
+// announceLeft posts the "left the Soulseek room" notice to Matrix.
+func (b *Bridge) announceLeft(username string) {
 	if err := b.mx.SendBotNotice(b.ctx, fmt.Sprintf("%s left the Soulseek room", username)); err != nil {
 		b.log.Debug("leave notice failed", "err", err)
 	}

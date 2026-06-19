@@ -79,6 +79,13 @@ soulseek:
   # name as shown in Soulseek clients (not an ID).
   room: "TheRoomName"
 
+  # Grace period (seconds) for suppressing leave/rejoin flaps. When a Soulseek
+  # client disconnects and reconnects within this window — usually a transient
+  # network blip — the "left"/"joined" notices are collapsed so Matrix stays
+  # quiet. Omit for the default (30s); set to 0 to disable and announce every
+  # leave immediately.
+  flap_suppression_seconds: 30
+
 # -----------------------------------------------------------------------------
 # Logging.
 # -----------------------------------------------------------------------------
