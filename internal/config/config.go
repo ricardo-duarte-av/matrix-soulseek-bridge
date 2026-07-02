@@ -58,6 +58,13 @@ type Soulseek struct {
 	// into nothing instead of two noisy notices. nil applies the default;
 	// 0 or negative disables suppression (announce leaves immediately).
 	FlapSuppressionSeconds *int `yaml:"flap_suppression_seconds"`
+
+	// AnnounceJoinsLeaves controls whether Soulseek join/leave events are
+	// rendered into Matrix as bot notices. Soulseek clients re-join every room
+	// on connect and leave them all on disconnect, so a flaky client produces a
+	// stream of "X joined"/"X left" noise. Set to false to drop these entirely
+	// and keep the Matrix timeline clean. nil applies the default (true).
+	AnnounceJoinsLeaves *bool `yaml:"announce_joins_leaves"`
 }
 
 // Logging holds logging options.
@@ -83,6 +90,15 @@ func (c *Config) FlapSuppression() time.Duration {
 		return 0
 	}
 	return time.Duration(s) * time.Second
+}
+
+// AnnouncePresence reports whether Soulseek join/leave events should be
+// mirrored into Matrix. Defaults to true when unset.
+func (c *Config) AnnouncePresence() bool {
+	if c.Soulseek.AnnounceJoinsLeaves == nil {
+		return true
+	}
+	return *c.Soulseek.AnnounceJoinsLeaves
 }
 
 // BotUserID returns the bridge bot's full Matrix user ID.

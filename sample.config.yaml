@@ -86,6 +86,14 @@ soulseek:
   # leave immediately.
   flap_suppression_seconds: 30
 
+  # Whether to render Soulseek join/leave events into Matrix as bot notices.
+  # Soulseek clients re-join every room when they connect and leave them all
+  # when they disconnect, so a flaky client floods the Matrix timeline with
+  # "X joined"/"X left" spam. Set to false to drop these entirely and keep the
+  # timeline clean (message bridging is unaffected). Omit for the default (true).
+  # When false, flap_suppression_seconds has no effect.
+  announce_joins_leaves: true
+
 # -----------------------------------------------------------------------------
 # Logging.
 # -----------------------------------------------------------------------------
