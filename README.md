@@ -104,6 +104,20 @@ See [`sample.config.yaml`](sample.config.yaml) and
 [`sample.registration.yaml`](sample.registration.yaml) — every setting is
 documented inline.
 
+### Join/leave notices
+
+Soulseek clients re-join every room when they connect and leave them all when
+they disconnect, so a flaky client can flood the Matrix timeline with
+`X joined` / `X left` notices. Two settings under `soulseek` control this:
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `flap_suppression_seconds` | `30` | Delays each `left` notice by this many seconds; if the user rejoins within the window (a transient reconnect), both the leave and the rejoin are collapsed and nothing is posted. Set to `0` to announce every leave immediately. |
+| `announce_joins_leaves` | `true` | Set to `false` to drop Soulseek join/leave events entirely — no presence notices are ever posted to Matrix. Message bridging is unaffected. When this is `false`, `flap_suppression_seconds` has no effect. |
+
+Use `flap_suppression_seconds` if you want presence notices but without the
+reconnect noise; use `announce_joins_leaves: false` if you never want them.
+
 ## Status & limitations
 
 - Bridges a single Soulseek room to a single Matrix room.
