@@ -181,7 +181,7 @@ func (b *Bridge) onSoulseekMessage(username, message string) {
 }
 
 func (b *Bridge) onSoulseekJoined(username string) {
-	if username == b.cfg.Soulseek.Username {
+	if username == b.cfg.Soulseek.Username || !b.cfg.AnnouncePresence() {
 		return
 	}
 
@@ -204,7 +204,7 @@ func (b *Bridge) onSoulseekJoined(username string) {
 }
 
 func (b *Bridge) onSoulseekLeft(username string) {
-	if username == b.cfg.Soulseek.Username {
+	if username == b.cfg.Soulseek.Username || !b.cfg.AnnouncePresence() {
 		return
 	}
 
