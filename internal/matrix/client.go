@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"regexp"
 	"sync"
+	"time"
 
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/event"
@@ -76,6 +77,20 @@ type Bridge struct {
 	// initialized tracks ghost user IDs we've already registered/joined/named.
 	initMu      sync.Mutex
 	initialized map[id.UserID]struct{}
+
+	// profileNames caches global-profile display names looked up by displayName,
+	// so we don't hit GetProfile on every message from a user with no per-room
+	// display name. Entries expire after profileNameTTL.
+	profileMu    sync.Mutex
+	profileNames map[id.UserID]profileNameEntry
+}
+
+// profileNameTTL is how long a cached global-profile display name stays valid.
+const profileNameTTL = time.Hour
+
+type profileNameEntry struct {
+	name    string
+	expires time.Time
 }
 
 // New constructs the Matrix bridge from options and registration.
@@ -117,6 +132,7 @@ func New(opts Options, handlers Handlers) (*Bridge, error) {
 		ep:           appservice.NewEventProcessor(as),
 		ownedRegexes: owned,
 		initialized:  make(map[id.UserID]struct{}),
+		profileNames: make(map[id.UserID]profileNameEntry),
 	}
 	b.ep.On(event.EventMessage, b.handleMessage)
 	return b, nil
@@ -179,14 +195,40 @@ func (b *Bridge) handleMessage(ctx context.Context, evt *event.Event) {
 	b.handlers.OnMessage(ctx, msg)
 }
 
-// displayName resolves a sender's room display name, falling back to the
-// localpart of the user ID.
+// displayName resolves a sender's display name. It prefers the per-room display
+// name from the m.room.member event, then falls back to the user's global
+// profile display name, and finally to the localpart of the user ID.
 func (b *Bridge) displayName(ctx context.Context, userID id.UserID) string {
 	member := b.as.BotIntent().Member(ctx, b.opts.RoomID, userID)
 	if member != nil && member.Displayname != "" {
 		return member.Displayname
 	}
+	if name := b.profileName(ctx, userID); name != "" {
+		return name
+	}
 	return userID.Localpart()
+}
+
+// profileName returns the user's global-profile display name, caching results
+// for profileNameTTL. A miss (error or empty name) is cached as "" so repeated
+// messages from a user without a display name don't each trigger a lookup.
+func (b *Bridge) profileName(ctx context.Context, userID id.UserID) string {
+	b.profileMu.Lock()
+	if entry, ok := b.profileNames[userID]; ok && time.Now().Before(entry.expires) {
+		b.profileMu.Unlock()
+		return entry.name
+	}
+	b.profileMu.Unlock()
+
+	name := ""
+	if profile, err := b.as.BotIntent().GetProfile(ctx, userID); err == nil {
+		name = profile.DisplayName
+	}
+
+	b.profileMu.Lock()
+	b.profileNames[userID] = profileNameEntry{name: name, expires: time.Now().Add(profileNameTTL)}
+	b.profileMu.Unlock()
+	return name
 }
 
 // SendAsGhost ensures the ghost user exists, is joined to the room, and has the
